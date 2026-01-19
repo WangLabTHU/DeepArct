@@ -1,12 +1,12 @@
-# 🧬🧱 DeepAcrt: Autonomous Synthesis of Regulatory Sequence Models
+# 🧬🧱 DeepArct: Autonomous Synthesis of Regulatory Sequence Models
 
 
-**DeepAcrt** is a hierarchical, knowledge-grounded multi-agent system designed to automate the end-to-end synthesis of deep learning pipelines for regulatory genomics. It addresses the "human-centric bottleneck" in computational biology by transforming days of manual literature review and iterative architecture design into a **5-to-10 minute automated workflow**.
+**DeepArct** is a hierarchical, knowledge-grounded multi-agent system designed to automate the end-to-end synthesis of deep learning pipelines for regulatory genomics. It addresses the "human-centric bottleneck" in computational biology by transforming days of manual literature review and iterative architecture design into a **5-to-10 minute automated workflow**.
 
 
 ---
 
-## 🌟 Why DeepAcrt?
+## 🌟 Why DeepArct?
 
 * **Data-Adaptive:** Directly maps your specific dataset characteristics (e.g., sequence length, noise profile, data modality) to architectural requirements.
 * **Knowledge-Grounded:** Powered by a dual-layer knowledge base—integrating the full texts of **28 foundational papers** with thousands of scientific abstracts via RAG.
@@ -21,10 +21,10 @@
 Clone the repository and set up the environment:
 
 ```
-git clone [https://github.com/your-username/DeepAcrt.git](https://github.com/your-username/DeepAcrt.git)
-cd DeepAcrt
-conda create -n DeepAcrt python=3.11
-conda activate DeepAcrt
+git clone [https://github.com/your-username/DeepArct.git](https://github.com/your-username/DeepArct.git)
+cd DeepArct
+conda create -n DeepArct python=3.11
+conda activate DeepArct
 pip install -r requirements.txt
 ```
 
@@ -60,7 +60,7 @@ JSON
 ```
 
 ## 🛠 Workflow
-DeepAcrt operates in two distinct phases:
+DeepArct operates in two distinct phases:
 
 ### Phase 1: Collaborative Design
 Run the multi-agent deliberation process. The Data, Method, Model, and Result Expert agents will collaborate to synthesize a comprehensive design strategy.
