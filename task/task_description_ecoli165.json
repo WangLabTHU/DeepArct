@@ -3,7 +3,7 @@
     "task_goal": "Construct a deep learning model to predict the relative expression activity ('expr' column) of E. coli flanking sequences based on their sequence features derived from the MPRA dataset.",
     "task_requirements": "The model should be a deep learning model, and the model should be able to predict the relative expression activity of the promoter.",
     "task_dataset": {
-        "file_path": "task/data/ecoli_165_cgan_wanglab/ecoli_mpra_3_laco.csv",
+        "file_path": "D:/DeepArc/task/data/ecoli_165_cgan_wanglab/ecoli_mpra_3_laco.csv",
         "data_type": "Massive Parallel Reporter Assay (MPRA) Results for flanking sequences of E. coli promoters",
         "input_features": "seq",
         "target_variable": "expr",

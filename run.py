@@ -6,6 +6,7 @@ from langchain_core.messages import BaseMessage
 
 from Agents.workflow import create_workflow_graph, create_initial_state
 from RAG.rag import HybridRAGSystem
+from config.settings import get_settings
 
 
 def _serialize_messages(messages: list[BaseMessage]) -> list[dict]:
@@ -284,36 +285,43 @@ def _format_conversation_to_txt(messages: list[dict]) -> str:
 
 
 def main() -> None:
-    rag = HybridRAGSystem()
-    
-    # 检查向量数据库是否已有数据，如果没有则加载知识库（包括核心论文）
-    collection = rag.collections.get("shared_knowledge_base")
-    if collection and collection.count() == 0:
-        print("\n" + "="*60)
-        print("📚 向量数据库为空，正在加载知识库（包括核心论文Methods部分）...")
-        print("="*60)
-        rag.load_knowledge_base(load_core_papers=True)
-        print("="*60 + "\n")
-    elif collection and collection.count() > 0:
-        print(f"\n✓ 向量数据库已有 {collection.count()} 个文档，跳过加载")
-        # 检查是否需要单独加载核心论文（如果之前没有加载过）
-        # 通过检查是否有 doc_type="core_paper_methods" 的文档来判断
-        try:
-            sample_results = collection.peek(limit=100)
-            has_core_papers = any(
-                meta.get("doc_type") == "core_paper_methods" 
-                for meta in (sample_results.get("metadatas", []) or [])
-            )
-            if not has_core_papers:
-                print("⚠️ 检测到向量库中没有核心论文Methods部分，正在加载...")
+    settings = get_settings()
+    use_rag = settings.use_rag
+
+    if use_rag:
+        rag = HybridRAGSystem()
+        # 检查向量数据库是否已有数据，如果没有则加载知识库（包括核心论文）
+        collection = rag.collections.get("shared_knowledge_base")
+        if collection and collection.count() == 0:
+            print("\n" + "="*60)
+            print("📚 向量数据库为空，正在加载知识库（包括核心论文Methods部分）...")
+            print("="*60)
+            rag.load_knowledge_base(load_core_papers=True)
+            print("="*60 + "\n")
+        elif collection and collection.count() > 0:
+            print(f"\n✓ 向量数据库已有 {collection.count()} 个文档，跳过加载")
+            # 检查是否需要单独加载核心论文（如果之前没有加载过）
+            try:
+                sample_results = collection.peek(limit=100)
+                has_core_papers = any(
+                    meta.get("doc_type") == "core_paper_methods"
+                    for meta in (sample_results.get("metadatas", []) or [])
+                )
+                if not has_core_papers:
+                    print("⚠️ 检测到向量库中没有核心论文Methods部分，正在加载...")
+                    rag.load_core_papers()
+            except Exception as e:
+                print(f"⚠️ 检查核心论文时出错: {e}，尝试加载核心论文...")
                 rag.load_core_papers()
-        except Exception as e:
-            print(f"⚠️ 检查核心论文时出错: {e}，尝试加载核心论文...")
-            rag.load_core_papers()
+        else:
+            print("⚠️ 无法访问向量数据库集合，尝试加载知识库...")
+            rag.load_knowledge_base(load_core_papers=True)
     else:
-        print("⚠️ 无法访问向量数据库集合，尝试加载知识库...")
-        rag.load_knowledge_base(load_core_papers=True)
-    
+        rag = None
+        print("\n" + "=" * 60)
+        print("📌 消融实验模式：RAG 已禁用，仅使用智能体讨论")
+        print("=" * 60 + "\n")
+
     app = create_workflow_graph(rag_system=rag)
 
     state = create_initial_state(rag_system=rag)

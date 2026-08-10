@@ -8,12 +8,13 @@ from pathlib import Path
 import json
 
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 from Agents.state import REAgentState, CritiqueResult, OptimizationReport
 from Agents.prompt import initialize_supervisor, initialize_agents_with_rag
 from Agents.agent import Agent, summarize_messages
 from RAG.rag import HybridRAGSystem
+from config.settings import get_settings
 
 
 # ==================== 工作流节点定义 ====================
@@ -264,7 +265,7 @@ async def supervisor_node(state: REAgentState) -> REAgentState:
     
     # 获取或创建Supervisor实例
     if _workflow_supervisor is None:
-        if _workflow_rag_system is None:
+        if _workflow_rag_system is None and get_settings().use_rag:
             _workflow_rag_system = HybridRAGSystem()
         _workflow_supervisor = initialize_supervisor(rag_system=_workflow_rag_system)
     
@@ -735,12 +736,41 @@ Please return the decision in JSON format (you can include optional fields as ne
                     messages = messages[-MAX_MESSAGES:]
         else:
             print(f"⚠️ 消息历史过长 ({len(messages)}条)，截断至最近{MAX_MESSAGES}条", flush=True)
-            # 保留最近的N条消息（优先保留非工具消息）
-            recent_messages = messages[-MAX_MESSAGES:]
-            messages = recent_messages
+            # 保留最近的N条消息（优先保留非工具消息，避免 ToolMessage 打乱 tool_calls 配对）
+            try:
+                from langchain_core.messages import ToolMessage
+                non_tool = [m for m in messages if not isinstance(m, ToolMessage)]
+                messages = non_tool[-MAX_MESSAGES:] if len(non_tool) >= 1 else messages[-MAX_MESSAGES:]
+            except Exception:
+                messages = messages[-MAX_MESSAGES:]
     
     # 构建消息列表（不直接修改state["messages"]，先处理工具调用）
-    current_messages = [system_message] + messages + [status_message]
+    # 重要：
+    # - ToolMessage（role=tool）必须与紧邻的 assistant(tool_calls) 成对出现；
+    # - 但我们的历史截断/总结可能破坏这种配对，导致 OpenAI 400。
+    # 因此：发送给模型的“历史消息”中，剔除所有 ToolMessage，
+    # 同时也剔除历史中带 tool_calls 的 assistant 消息，避免出现“缺少对应 tool 响应”的非法序列。
+    try:
+        from langchain_core.messages import ToolMessage, AIMessage
+
+        def _msg_has_tool_calls(m: object) -> bool:
+            if hasattr(m, "tool_calls") and getattr(m, "tool_calls"):
+                return True
+            if hasattr(m, "additional_kwargs"):
+                ak = getattr(m, "additional_kwargs") or {}
+                if isinstance(ak, dict) and ak.get("tool_calls"):
+                    return True
+            return False
+
+        messages_for_llm = [
+            m
+            for m in messages
+            if not isinstance(m, ToolMessage)
+            and not (isinstance(m, AIMessage) and _msg_has_tool_calls(m))
+        ]
+    except Exception:
+        messages_for_llm = messages
+    current_messages = [system_message] + messages_for_llm + [status_message]
     
     # 处理工具调用（最多3轮）
     max_tool_iterations = 3
@@ -1020,7 +1050,7 @@ async def analyze_node(state: REAgentState) -> REAgentState:
     # 确保专家Agent已初始化
     global _workflow_expert_agents, _workflow_rag_system
     if _workflow_expert_agents is None:
-        if _workflow_rag_system is None:
+        if _workflow_rag_system is None and get_settings().use_rag:
             _workflow_rag_system = HybridRAGSystem()
         _workflow_expert_agents = initialize_agents_with_rag(rag_system=_workflow_rag_system)
     
@@ -1038,6 +1068,20 @@ async def analyze_node(state: REAgentState) -> REAgentState:
         else:
             # 回退：使用全局状态构建的通用任务计划
             task_plan = _build_task_plan(state)
+
+        # 只在第一轮强制 data_management 调用表格EDA工具；后续轮次不再强制
+        if role == "data_management" and not state.get("data_tools_used"):
+            tp = (task_plan.get("task_prompt", "") or "")
+            tool_instructions = (
+                "CRITICAL (FIRST ROUND ONLY):\n"
+                "You MUST call BOTH tools exactly once to analyze the dataset:\n"
+                "1) describe_table(file_path=..., output_dir='outputs/eda', sequence_columns=..., activity_columns=...)\n"
+                "2) plot_table_distributions(file_path=..., output_dir='outputs/eda', sequence_columns=..., activity_column=...)\n"
+                "All outputs (JSON + PNG) must be saved under the project outputs directory.\n"
+                "After tool calls, base your analysis strictly on tool results.\n\n"
+            )
+            task_plan = dict(task_plan)
+            task_plan["task_prompt"] = tool_instructions + tp
         tasks[role] = agent.analyze(task_plan, state)
     
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -1064,6 +1108,57 @@ async def analyze_node(state: REAgentState) -> REAgentState:
     state["methodology_critique"] = critiques.get("methodology")
     state["model_critique"] = critiques.get("model_architect")
     state["results_critique"] = critiques.get("result_analyst")
+
+    # 标记：data_management 的工具只允许第一轮使用
+    if state.get("data_critique") is not None:
+        state["data_tools_used"] = True
+    
+    # 将专家分析详情追加到 messages，形成完整对话记录
+    _role_names = {
+        "data_management": "数据管理专家",
+        "methodology": "方法学专家",
+        "model_architect": "模型架构师",
+        "result_analyst": "结果分析师",
+    }
+    for role, crit in critiques.items():
+        if not crit:
+            continue
+        rn = _role_names.get(role, role)
+        plan = agent_task_plans.get(role)
+        if not isinstance(plan, dict):
+            plan = _build_task_plan(state)
+        task_title = plan.get("title", "")
+        task_prompt = (plan.get("task_prompt", "") or "")[:3000]
+        state["messages"].append(HumanMessage(
+            content=f"【专家分析 - {rn}】\n\nTask: {task_title}\n\nTask Prompt:\n{task_prompt}"
+        ))
+        meta = crit.metadata if hasattr(crit, "metadata") else (crit if isinstance(crit, dict) else {})
+        if isinstance(meta, dict):
+            meta = meta
+        else:
+            meta = {}
+        design_summary = meta.get("design_summary", "")
+        impl = meta.get("implementation_plan") or meta.get("detailed_design", {})
+        if isinstance(impl, dict) and impl:
+            impl_str = impl.get("design_recommendations", json.dumps(impl, ensure_ascii=False, indent=1))
+        else:
+            # 有些对象（例如自定义消息对象）对 slice 操作不友好，这里先统一转成字符串再截断
+            impl_str = str(impl) if impl else ""
+        impl_str = str(impl_str or "")[:4000]
+        recs = getattr(crit, "recommendations", []) or meta.get("recommendations", []) or []
+        recs_str = "\n".join(f"- {r}" for r in recs[:10]) if recs else ""
+        content_parts = [
+            f"【专家分析 - {rn}】",
+            f"Score: {getattr(crit, 'score', 0)}/10",
+            "",
+            "Design Summary:",
+            design_summary,
+        ]
+        if impl_str:
+            content_parts.extend(["", "Implementation Plan:", impl_str])
+        if recs_str:
+            content_parts.extend(["", "Recommendations:", recs_str])
+        state["messages"].append(AIMessage(content="\n".join(content_parts)))
     
     print("\n✓ 所有专家Agent分析完成")
     print(f"  - 数据管理: {critiques.get('data_management').score if critiques.get('data_management') else 'N/A'}/10")
@@ -1091,7 +1186,7 @@ async def discuss_node(state: REAgentState) -> REAgentState:
     
     # 确保专家Agent已初始化
     if _workflow_expert_agents is None:
-        if _workflow_rag_system is None:
+        if _workflow_rag_system is None and get_settings().use_rag:
             _workflow_rag_system = HybridRAGSystem()
         _workflow_expert_agents = initialize_agents_with_rag(rag_system=_workflow_rag_system)
     
@@ -1261,11 +1356,22 @@ Please return the updated analysis in JSON format:
         
         try:
             from langchain_core.messages import SystemMessage, HumanMessage
+            # data_management：首轮可用全部工具；后续仅禁用表格EDA两工具，RAG等保留
+            ban_eda_tools = bool(role == "data_management" and state.get("data_tools_used"))
+            banned_tool_names = {"describe_table", "plot_table_distributions"} if ban_eda_tools else set()
+            allow_tools = True
+            sys_suffix = (
+                "\n\nYou are now participating in the expert discussion, and you can supplement or correct your analysis based on the opinions of other experts."
+            )
+            sys_suffix += " You can use available tools (rag_search, read_file, etc.) to retrieve relevant knowledge or data to support your analysis."
+            if ban_eda_tools:
+                sys_suffix += " IMPORTANT: The tools 'describe_table' and 'plot_table_distributions' are DISABLED after the first round. Do NOT call them in this stage."
+
             messages = [
-                SystemMessage(content=agent.prompt() + "\n\nYou are now participating in the expert discussion, and you can supplement or correct your analysis based on the opinions of other experts. You can use available tools (rag_search, read_file, etc.) to retrieve relevant knowledge or data to support your analysis."),
-                HumanMessage(content=discussion_prompt)
+                SystemMessage(content=agent.prompt() + sys_suffix),
+                HumanMessage(content=discussion_prompt),
             ]
-            
+
             response = await agent.llm_with_tools.ainvoke(messages)
             
             # 处理工具调用（如果有）
@@ -1311,6 +1417,18 @@ Please return the updated analysis in JSON format:
                     
                     # 查找并执行工具
                     tool = next((t for t in agent._tools if t.name == tool_name), None)
+                    if tool_name in banned_tool_names:
+                        messages.append(ToolMessage(
+                            content=str({
+                                "tool_name": tool_name,
+                                "success": False,
+                                "skipped": True,
+                                "reason": "Disabled after first round for data_management.",
+                            }),
+                            tool_call_id=tool_call_id
+                        ))
+                        continue
+
                     if tool:
                         try:
                             if hasattr(tool, "_arun"):
@@ -1443,6 +1561,26 @@ Please return the updated analysis in JSON format:
             
             updated_critiques[role] = updated_critique
             print(f"    ✓ {agent.title} 补充分析完成")
+            
+            # 将专家讨论对话追加到 messages
+            _discuss_role_names = {
+                "data_management": "数据管理专家",
+                "methodology": "方法学专家",
+                "model_architect": "模型架构师",
+                "result_analyst": "结果分析师",
+            }
+            _drn = _discuss_role_names.get(role, role)
+            _prefix = f"【专家讨论 - {_drn}】\n\n"
+            state["messages"].append(HumanMessage(content=_prefix + (discussion_prompt[:5000] if discussion_prompt else "")))
+            for _m in messages[2:]:
+                if isinstance(_m, ToolMessage):
+                    continue  # 跳过 ToolMessage，避免后续 Supervisor 调用时 API 报错
+                _c = getattr(_m, "content", "") or ""
+                if isinstance(_m, AIMessage):
+                    state["messages"].append(AIMessage(content=_prefix + _c))
+                elif isinstance(_m, HumanMessage):
+                    state["messages"].append(HumanMessage(content=_prefix + _c))
+            state["messages"].append(AIMessage(content=_prefix + (response.content or response_text or "")))
             
         except Exception as e:
             print(f"    ⚠️ {agent.title} 讨论分析失败: {e}")
@@ -1813,8 +1951,8 @@ def create_workflow_graph(rag_system: HybridRAGSystem = None, supervisor: Agent 
     Returns:
         编译后的StateGraph应用
     """
-    # 设置工作流组件
-    if rag_system is None:
+    # 设置工作流组件（消融实验：rag_system=None 时不创建RAG）
+    if rag_system is None and get_settings().use_rag:
         rag_system = HybridRAGSystem()
     
     if supervisor is None:

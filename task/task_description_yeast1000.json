@@ -1,0 +1,12 @@
+{
+    "task_name": "Promoter Activity Prediction Model Construction using RNA-seq Data for whole gene regulatory structures of yeast,the sequence is 1000bp,which crosses 4 regulatory regions:Promoter:400 bp（located upstream of the transcription start site TSS）,5' UTR:100 bp（located between the TSS and the start codon Start）,3' UTR:250 bp（located between the stop codon Stop and the transcription termination site TTS）,Terminator:250 bp（located downstream of the TTS）",
+    "task_goal": "Construct a deep learning model to predict the relative expression activity ('expr' column) of yeast whole gene regulatory structures sequences based on their sequence features derived from the RNA-seq dataset.",
+    "task_requirements": "The model should be a deep learning model, and the model should be able to predict the relative expression activity of the whole gene regulatory sequences.",
+    "task_dataset": {
+        "file_path": "task/data/yeast_1000_expression_gan_aleksej/yeast_1000.csv",
+        "data_type": "RNA-seq Data of yeast whole gene regulatory structures,the sequence is 1000bp,which crosses 4 regulatory regions:Promoter:400 bp（located upstream of the transcription start site TSS）,5' UTR:100 bp（located between the TSS and the start codon Start）,3' UTR:250 bp（located between the stop codon Stop and the transcription termination site TTS）,Terminator:250 bp（located downstream of the TTS）",
+        "input_features": "seq",
+        "target_variable": "expr",
+        "key_constraint": "The sequence data is in the 'seq' column, the length of the input sequence is all 1000bp and the target variable is in the 'expr' column."
+      } 
+}

@@ -1,0 +1,12 @@
+{
+    "task_name": "Promoter Activity Prediction Model Construction using lentiMPRA Data for cis-regulatory elements of human HepG2 cells, the sequence is 200bp, which represents a core cis-regulatory element (cCRE) centered at a DNase I hypersensitivity site peak midpoint (±100 bp)",
+    "task_goal": "Construct a deep learning model to predict the relative regulatory activity ('fitness' column) of human HepG2 cell cis-regulatory element sequences based on their sequence features derived from the lentiMPRA dataset (MPRALegNet).",
+    "task_requirements": "The model should be a deep learning model, and the model should be able to predict the relative regulatory activity of the 200bp cis-regulatory element sequences.The parameters of the model should be no more than 3M. The evaluation metrics are PCC(Pearson Correlation Coefficient), SCC(Spearman Correlation Coefficient) and MAE(Mean Absolute Error).",
+    "task_dataset": {
+        "file_path": "D:/DeepArc/task/data/MPRAlegnet/D1_MPRALegNet_HepG2.csv",
+        "data_type": "lentiMPRA Data of human HepG2 cell cis-regulatory elements (cCREs), the sequence is 200bp, representing a core regulatory region centered at DNase I hypersensitivity site peaks, with regulatory activity measured as log2(RNA/DNA) ratio normalized fitness scores",
+        "input_features": "sequences",
+        "target_variable": "fitness",
+        "key_constraint": "The sequence data is in the 'sequences' column, the length of the input sequence is all 200bp and the target variable is in the 'fitness' column."
+    }
+}

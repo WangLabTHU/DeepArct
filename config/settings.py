@@ -13,7 +13,7 @@ from pathlib import Path
 class Settings:
     """系统设置"""
     # LLM配置
-    llm_model: str = "gpt-5.2"
+    llm_model: str = "gpt-5.1"
     code_model: str = "gpt-5.1"
     openai_api_key: Optional[str] = None
     
@@ -35,6 +35,10 @@ class Settings:
     # 工作流配置
     max_iterations: int = 8
     default_temperature: float = 0.6
+    code_generator_temperature: float = 0.3  # 代码生成专用，更聚焦
+
+    # 消融实验：是否启用RAG（False=仅智能体讨论，无知识库检索）
+    use_rag: bool = True
 
 
 
@@ -84,5 +88,9 @@ def get_settings() -> Settings:
         _settings = Settings()
         # 从环境变量加载配置（此时 .env 已尝试加载）
         _settings.openai_api_key = os.getenv("OPENAI_API_KEY")
+        # USE_RAG: "false"/"0" 表示消融实验（仅智能体讨论，无RAG）
+        use_rag_env = os.getenv("USE_RAG", "").lower()
+        if use_rag_env in ("false", "0", "no", "off"):
+            _settings.use_rag = False
     return _settings
 

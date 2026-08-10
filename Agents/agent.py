@@ -9,6 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from langchain_core.tools import BaseTool
 from config.settings import get_settings
 from Agents.state import CritiqueResult, REAgentState, get_tool_registry
+import json
 
 
 async def summarize_messages(messages: List, max_summary_length: int = 2000) -> str:
@@ -182,9 +183,14 @@ You also have access to file reading/writing tools (`read_file`, `write_file`) i
         """延迟初始化LLM"""
         if self._llm is None:
             max_tokens = self._get_max_tokens(self.model)
+            temp = (
+                self.settings.code_generator_temperature
+                if self.role == "code_generator"
+                else self.settings.default_temperature
+            )
             self._llm = ChatOpenAI(
                 model=self.model,
-                temperature=self.settings.default_temperature,
+                temperature=temp,
                 openai_api_key=self.settings.openai_api_key,
                 max_tokens=max_tokens  # 根据模型类型动态设置
             )
@@ -228,7 +234,12 @@ You also have access to file reading/writing tools (`read_file`, `write_file`) i
         优先通过 ToolRegistry 中的 `rag_search` 工具执行，
         这样可以在终端看到工具调用状态；如果工具不可用，
         则回退到直接使用底层 RAG 接口。
+        消融实验：若Agent未分配rag_search工具，直接返回空（不检索）。
         """
+        # 消融实验：Agent未分配rag_search时直接返回空
+        if not any(getattr(t, "name", "") == "rag_search" for t in (self._tools or [])):
+            return {"shared_knowledge": [], "specialized_knowledge": [], "total_results": 0}
+
         # 优先使用 RAGSearchTool（走工具链）
         try:
             tool_registry = get_tool_registry()
@@ -729,6 +740,19 @@ Your goal: {self.goal}
                 elif hasattr(response, "additional_kwargs") and response.additional_kwargs.get("tool_calls"):
                     tool_calls_list = response.additional_kwargs["tool_calls"]
                 
+                # 逐个工具调用并检查：一旦前序失败，后续全部跳过（但仍返回“skipped”结果，保证 tool_call_id 配对完整）
+                should_continue_tools = True
+
+                # 工具结果统一用 JSON 字符串承载（避免 python dict 字符串不稳定/不可解析）
+                def _to_json_text(obj: Any, max_chars: int = 20000) -> str:
+                    try:
+                        text = json.dumps(obj, ensure_ascii=False, indent=2, default=str)
+                    except Exception:
+                        text = str(obj)
+                    if len(text) > max_chars:
+                        return text[:max_chars] + f"\n\n[TRUNCATED: original_length={len(text)}]"
+                    return text
+
                 for tool_call in tool_calls_list:
                     # 处理不同格式的工具调用
                     if isinstance(tool_call, dict):
@@ -759,6 +783,20 @@ Your goal: {self.goal}
                         import uuid
                         tool_call_id = f"call_{uuid.uuid4().hex[:12]}"
                         print(f"    ⚠️ Tool call missing ID, generated: {tool_call_id}", flush=True)
+
+                    # 若前序工具失败，则不再实际调用后续工具，直接返回 skipped
+                    if not should_continue_tools:
+                        tool_results.append({
+                            "tool_call_id": tool_call_id,
+                            "name": tool_name or "unknown",
+                            "content": _to_json_text({
+                                "tool_name": tool_name or "unknown",
+                                "success": False,
+                                "skipped": True,
+                                "reason": "Skipped because a previous tool call failed in the same tool_calls batch.",
+                            })
+                        })
+                        continue
                     
                     # 如果 tool_name 为空，仍然需要创建 ToolMessage 以避免错误
                     if not tool_name:
@@ -767,6 +805,7 @@ Your goal: {self.goal}
                             "name": "unknown",
                             "content": f"Tool call has no name. Original tool_call: {str(tool_call)[:200]}"
                         })
+                        should_continue_tools = False
                         continue
                     
                     # 查找对应的工具
@@ -779,12 +818,16 @@ Your goal: {self.goal}
                             else:
                                 result = tool._run(**tool_args)
                             
-                            # 格式化工具结果
                             if isinstance(result, dict) and result.get("success"):
                                 tool_results.append({
                                     "tool_call_id": tool_call_id,
                                     "name": tool_name,
-                                    "content": f"Tool '{tool_name}' executed successfully. Result: {result.get('data', {})}"
+                                    "content": _to_json_text({
+                                        "tool_name": tool_name,
+                                        "success": True,
+                                        "data": result.get("data"),
+                                        "metadata": result.get("metadata"),
+                                    })
                                 })
                                 # 如果是RAG工具，更新knowledge_context
                                 if tool_name == "rag_search" and isinstance(result.get("data"), dict):
@@ -810,21 +853,37 @@ Your goal: {self.goal}
                                 tool_results.append({
                                     "tool_call_id": tool_call_id,
                                     "name": tool_name,
-                                    "content": f"Tool '{tool_name}' returned: {result}"
+                                    "content": _to_json_text({
+                                        "tool_name": tool_name,
+                                        "success": (result.get("success") if isinstance(result, dict) and "success" in result else None),
+                                        "result": result,
+                                    })
                                 })
+                                # 标记失败：后续工具将被跳过（逐个检查调用）
+                                should_continue_tools = False
                         except Exception as e:
                             print(f"    ⚠️ 工具 '{tool_name}' 执行失败: {e}", flush=True)
                             tool_results.append({
                                 "tool_call_id": tool_call_id,
                                 "name": tool_name,
-                                "content": f"Tool '{tool_name}' execution failed: {str(e)}"
+                                "content": _to_json_text({
+                                    "tool_name": tool_name,
+                                    "success": False,
+                                    "error": str(e),
+                                })
                             })
+                            should_continue_tools = False
                     else:
                         tool_results.append({
                             "tool_call_id": tool_call_id,
                             "name": tool_name,
-                            "content": f"Tool '{tool_name}' not found"
+                            "content": _to_json_text({
+                                "tool_name": tool_name,
+                                "success": False,
+                                "error": "Tool not found",
+                            })
                         })
+                        should_continue_tools = False
                 
                 # 添加工具结果到消息历史（LangChain格式）
                 # 确保每个 tool_call 都有对应的 ToolMessage

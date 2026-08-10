@@ -1,0 +1,12 @@
+{
+    "task_name": "Promoter Activity Prediction Model Construction using dRNA-seq Data for flanking sequences of E. coli promoters",
+    "task_goal": "Construct a deep learning model to predict the relative expression activity ('expr' column) of E. coli flanking sequences based on their sequence features derived from the dRNA-seq dataset.",
+    "task_requirements": "The model should be a deep learning model, and the model should be able to predict the relative expression activity of the promoter. The parameters of the model should be no more than 3M. The evaluation metrics are PCC(Pearson Correlation Coefficient), SCC(Spearman Correlation Coefficient) and MAE(Mean Absolute Error).",
+    "task_dataset": {
+        "file_path": "task/data/ecoli_50_wgan_diffusion_wanglab/ecoli_natural50bp_expr.csv",
+        "data_type": "dRNA-seq Results of E. coli promoters",
+        "input_features": "seq",
+        "target_variable": "expr",
+        "key_constraint": "The sequence data is in the 'seq' column, the length of the input sequence is all 50bp and the target variable is in the 'expr' column."
+      }
+}

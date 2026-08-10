@@ -1,0 +1,12 @@
+{
+    "task_name": "Human 5′ UTR Translation Efficiency Prediction",
+    "task_goal": "Construct a deep learning model to predict the ribosome loading (translation efficiency) of human 5′ UTR sequences measured by polysome profiling MPRA experiments.",
+    "task_requirements": "The model should take 5′ UTR sequences as input and predict translation efficiency (RL) as a regression task.",
+    "task_dataset": {
+        "file_path": "D:/DeepArc/task/data/5'UTR/GSM3130436_egfp_unmod.csv",
+        "description": "Dataset from MPRA polysome profiling experiments containing randomized or designed human 5′ UTR sequences and their ribosome loading measurements across multiple fractions.",
+        "input_features": "utr",
+        "target_variables": "rl",
+        "key_constraints": "Input sequences are 5′ UTRs with lengths 59 nucleotides. Test set has been reserved for evaluation, so you only need to split the data into train/val set."
+    }
+}

@@ -1,0 +1,25 @@
+{
+    "task_name": "Single-Cell-Type CRE Activity Prediction from DNase-Derived MPRA Sequences",
+    "task_goal": "Construct a deep learning regression model to predict the quantitative regulatory activity (mean log2 fold-change) of 200bp DNase-derived cis-regulatory DNA sequences in a single cellular context. The model should learn motif-level and combinatorial sequence features directly from DNA sequence alone.",
+    "task_requirements": "The model must be a purely sequence-based deep learning model operating on fixed-length DNA sequences encoded as 4-channel One-hot matrices of shape (4, 200). The task is strictly single-task regression: each model predicts one scalar activity value and is trained independently. No chromosome identifiers, fold indices, sequence IDs, or reverse-orientation flags may be used as model inputs. Reverse-complement sequences may be optionally used for data augmentation, but must share the same target value.",
+    "task_dataset": {
+        "file_path": "D:/DeepArc/task/data/EnformerMPRA/HepG2.csv",
+        "description": "A sequence-level MPRA dataset derived from DNase I hypersensitive regions without promoter overlap. Each sample corresponds to a synthetic 200bp cis-regulatory DNA sequence of HepG2 cell line tested using a massively parallel reporter assay. For each sequence, the dataset provides a quantitative regulatory activity score representing the mean log2 fold-change of reporter expression relative to control. Some sequences appear in both forward and reverse-complement orientations as independent entries.",
+        "columns": {
+            "seq_id": "Unique identifier for each tested DNase-derived regulatory sequence. Reversed-complement entries are denoted by a suffix such as '_Reversed'. This column must not be used as a model feature.",
+            "seq": "DNA sequence of fixed length (230bp) composed of characters A, C, G, and T. This is the sole model input and must be converted to a 4-channel One-hot encoding.",
+            "mean_value": "Quantitative MPRA measurement representing the mean log2 fold-change of reporter expression driven by the sequence. This is the regression target variable.",
+            "fold": "Integer index indicating the predefined experimental or cross-validation fold assignment. This field may be used for dataset splitting but must not be exposed to the model during training.",
+            "rev": "Binary indicator specifying whether the sequence is presented in reverse-complement orientation (1) or forward orientation (0). This field must not be used as a model input."
+        },
+        "input_features": "seq",
+        "target_variable": "mean_value",
+        "key_constraints": [
+            "Input sequences must be encoded as 4-channel One-hot matrices of shape (4, 230).",
+            "The task is single-task regression: the model predicts one scalar mean_value per sequence.",
+            "Sequence orientation flags (rev) and fold assignments must never be provided to the model as input features.",
+            "If reverse-complement augmentation is used, forward and reversed sequences must share the same target value.",
+            "Model evaluation should be performed on held-out folds or predefined splits, reporting Pearson correlation between predicted and observed mean_value."
+        ]
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "task_name": "Alternative Polyadenylation Usage Prediction",
+    "task_goal": "Construct a deep learning model to predict proximal polyadenylation site usage from synthetic DNA regulatory sequences measured by massively parallel reporter assays (MPRA).",
+    "task_requirements": "The model should take DNA sequences surrounding polyadenylation signals as input and predict proximal polyadenylation usage ratio as a regression task.",
+    "task_dataset": {
+        "file_path": "D:/DeepArc/task/data/APARENT/data_isoforms.csv",
+        "description": "Dataset derived from the APARENT massively parallel reporter assay for alternative polyadenylation modeling. Each sample contains a synthetic DNA sequence with engineered upstream/downstream mutations around the polyadenylation signal and experimentally measured proximal cleavage usage statistics.",
+        "input_features": "seq",
+        "target_variables": "proximal_usage_ratio",
+        "key_constraints": "Input sequences are fixed-length DNA regulatory sequences (~186 nt) composed of A/C/G/T characters only. The target variable is a continuous proximal polyadenylation usage ratio ranging from 0 to 1. Test set has been reserved for evaluation, so you only need to split the data into train/validation sets."
+    }
+}

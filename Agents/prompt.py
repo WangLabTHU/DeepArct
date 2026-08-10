@@ -75,7 +75,16 @@ DATA_MANAGEMENT_AGENT = Agent(
         "data augmentation techniques. Identify potential data quality issues, and provide detailed, "
         "implementable data management strategies with clear justification linking dataset characteristics "
         "to chosen preprocessing approaches."
-    ),
+        "\n\n"
+        "=== Data EDA Tools (CONDITIONAL USE) ===\n"
+        "You have two specialized tabular EDA tools:\n"
+        "1) describe_table(file_path, max_rows=200000, sequence_columns?, activity_columns?, output_dir='outputs/eda', save_json=True)\n"
+        "   - Returns JSON summary and also saves a full JSON report to the project outputs directory.\n"
+        "   - For MPRA-like tables, explicitly set sequence_columns=['sequence'/'seq'] and activity_columns=['expr'/'*_log2FC'] when known.\n"
+        "2) plot_table_distributions(file_path, output_dir='outputs/eda', max_rows=200000, sequence_columns?, activity_column?)\n"
+        "   - Saves PNG artifacts (histograms, scatter plots) under the project outputs directory and returns artifact paths.\n"
+        "\n"
+       ),
     model=DEFAULT_MODEL,
 )
 
@@ -169,6 +178,38 @@ RESULT_ANALYST_AGENT = Agent(
     model=DEFAULT_MODEL,
 )
 
+
+OPTIMIZER_AGENT = Agent(
+    title="Training Optimizer",
+    expertise=(
+        "Analyze training logs, metric summaries, and code implementation for deep learning experiments. "
+        "Identify issues in data pipeline, model architecture, optimization, regularization, early stopping, "
+        "and evaluation. Propose concrete, implementable optimization strategies that balance performance, "
+        "stability, and generalization for promoter activity prediction on short DNA sequences."
+    ),
+    goal=(
+        "Given: (1) training logs with per-epoch losses and validation PCC, (2) final training_summary.json "
+        "containing best epochs and test metrics for each ensemble member, (3) current code implementation "
+        "for config, dataset, model, training loop, and utilities, and (4) the original experimental design "
+        "task description section used for code generation, carefully analyze the current setup. "
+        "Identify failure modes, bottlenecks, over/underfitting signals, and mismatches between design "
+        "intent and implementation. Then produce a structured optimization plan that includes prioritized "
+        "issues, root-cause hypotheses, and concrete code-level and configuration-level changes."
+    ),
+    role=(
+        "Act as an experiment optimization expert. Read the provided logs, metric summaries, and code snippets "
+        "to understand how the current E. coli 50bp promoter model is trained and evaluated. "
+        "Diagnose where performance is limited (e.g., low PCC/R2, unstable validation curves, weak generalization) "
+        "and how training dynamics behave across stages and ensemble members. "
+        "Synthesize a detailed optimization plan with: (1) a concise high-level assessment, "
+        "(2) a list of concrete problems grouped by component (data, model, optimization, regularization, "
+        "evaluation, implementation robustness), (3) an ordered set of recommended changes with estimated impact "
+        "and risk, and (4) optional ablation or follow-up experiments. "
+        "The output must be directly usable by engineers as a roadmap for the next iteration."
+    ),
+    model=DEFAULT_MODEL,
+)
+
 CODE_GENERATOR_AGENT = Agent(
     title="Code Generator",
     expertise=(
@@ -216,6 +257,7 @@ AGENT_ROLE_MAP = {
     "model_architect": MODEL_ARCHITECT_AGENT,
     "result_analyst": RESULT_ANALYST_AGENT,
     "code_generator": CODE_GENERATOR_AGENT,
+    "optimizer": OPTIMIZER_AGENT,
 }
 
 # Agent角色到RAG角色的映射（现在所有Agent都使用共享知识库）
@@ -230,11 +272,13 @@ AGENT_TO_RAG_ROLE = {
 # Agent角色到工具分配的映射
 AGENT_TO_TOOLS = {
     "supervisor": ["read_file", "write_file"],
-    "data_management": ["rag_search", "read_file", "write_file"],
+    "data_management": ["rag_search", "read_file", "write_file", "describe_table", "plot_table_distributions"],
     "methodology": ["rag_search", "read_file", "write_file"],
     "model_architect": ["rag_search", "read_file", "write_file"],
     "result_analyst": ["rag_search", "read_file", "write_file"],
     "code_generator": ["read_file", "write_file"],
+    # optimizer 主要分析当前项目产出的日志与代码，不强制依赖 RAG
+    "optimizer": ["read_file", "write_file"],
 }
 
 
@@ -271,8 +315,10 @@ def _create_agent_instance(
         rag_interface = AgentRAGInterface(rag_system, rag_role)
         agent.set_rag_interface(rag_interface)
     
-    # 分配工具
+    # 分配工具（消融实验：rag_system=None 时不分配 rag_search）
     tool_names = AGENT_TO_TOOLS.get(role, [])
+    if rag_system is None and "rag_search" in tool_names:
+        tool_names = [t for t in tool_names if t != "rag_search"]
     tools = [tool_registry.get_tool(name) for name in tool_names if tool_registry.get_tool(name)]
     agent.set_tools(tools)
     
@@ -293,7 +339,8 @@ def initialize_agents_with_rag(
     Returns:
         角色名到Agent实例的字典
     """
-    if rag_system is None:
+    # 消融实验：rag_system=None 表示不启用RAG，不在此处创建
+    if rag_system is None and get_settings().use_rag:
         rag_system = HybridRAGSystem()
     
     # 获取工具注册表
@@ -310,7 +357,8 @@ def initialize_agents_with_rag(
         agent_config = AGENT_ROLE_MAP[role]
         agent, tool_names = _create_agent_instance(role, agent_config, rag_system, tool_registry)
         agents[role] = agent
-        print(f"✓ 初始化Agent: {agent.title} (RAG: {AGENT_TO_RAG_ROLE.get(role, 'shared_knowledge_base')}, 工具: {', '.join(tool_names)})")
+        rag_status = "RAG: " + AGENT_TO_RAG_ROLE.get(role, "shared_knowledge_base") if rag_system else "RAG: 禁用"
+        print(f"✓ 初始化Agent: {agent.title} ({rag_status}, 工具: {', '.join(tool_names)})")
     
     return agents
 
@@ -327,14 +375,15 @@ def initialize_supervisor(
     Returns:
         Supervisor Agent实例
     """
-    if rag_system is None:
+    if rag_system is None and get_settings().use_rag:
         rag_system = HybridRAGSystem()
     
     tool_registry = get_tool_registry()
     agent_config = AGENT_ROLE_MAP["supervisor"]
     agent, tool_names = _create_agent_instance("supervisor", agent_config, rag_system, tool_registry)
     
-    print(f"✓ 初始化Supervisor: {agent.title} (RAG: {AGENT_TO_RAG_ROLE.get('supervisor', 'shared_knowledge_base')}, 工具: {', '.join(tool_names)})")
+    rag_status = "RAG: " + AGENT_TO_RAG_ROLE.get("supervisor", "shared_knowledge_base") if rag_system else "RAG: 禁用"
+    print(f"✓ 初始化Supervisor: {agent.title} ({rag_status}, 工具: {', '.join(tool_names)})")
     
     return agent
 

@@ -1,3 +1,11 @@
 model_codes/
 task/data/
-
+code_*/
+# Python cache
+__pycache__/
+*.py[cod]
+# Runtime outputs
+outputs/
+# OS
+.DS_Store
+Thumbs.db
