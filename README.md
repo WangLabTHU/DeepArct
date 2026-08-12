@@ -9,7 +9,7 @@
 ## 🌟 Why DeepArct?
 
 * **Data-Adaptive:** Directly maps your specific dataset characteristics (e.g., sequence length, noise profile, data modality) to architectural requirements.
-* **Knowledge-Grounded:** Powered by a dual-layer knowledge base—integrating the full texts of **28 foundational papers** with thousands of scientific abstracts via RAG.
+* **Knowledge-Grounded:** Powered by a dual-layer knowledge base—integrating the full texts of **30 foundational papers** with thousands of scientific abstracts via RAG.
 * **Transparent & Interpretable:** Shifting from "black-box" optimization to **constraint-driven synthesis**. Every model choice is backed by a traceable biological rationale (e.g., Reverse-Complement symmetry, receptive field calibration).
 * **Zero Manual Tuning:** Delivers a complete, executable pipeline including data preprocessing, optimized model architecture, and rigorous training/evaluation protocols.
 
@@ -21,7 +21,7 @@
 Clone the repository and set up the environment:
 
 ```
-git clone [https://github.com/your-username/DeepArct.git](https://github.com/your-username/DeepArct.git)
+git clone [https://github.com/AA-ke/DeepArct.git]
 cd DeepArct
 conda create -n DeepArct python=3.11
 conda activate DeepArct
@@ -93,7 +93,7 @@ Output: Fully functional .py files including data loaders, model classes (e.g., 
 
 ## 📦 Dataset and Trained Models
 
-The datasets and trained models are archived on Zenodo at: https://zenodo.org/records/18270213.
+The datasets and trained models are archived on Zenodo at: [https://zenodo.org/records/18270213](https://zenodo.org/records/21867904).
 
 Usage Instructions: To facilitate model execution, please place the downloaded files in ./data  into the ./task/ directory within the DeepArct repository. This configuration ensures that the automated workflow correctly identifies the biological sequences and corresponding regulatory labels during the synthesis process.
 
