@@ -21,7 +21,7 @@
 Clone the repository and set up the environment:
 
 ```
-git clone [https://github.com/AA-ke/DeepArct.git]
+git clone https://github.com/AA-ke/DeepArct.git
 cd DeepArct
 conda create -n DeepArct python=3.11
 conda activate DeepArct
