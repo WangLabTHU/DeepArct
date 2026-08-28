@@ -93,7 +93,7 @@ Output: Fully functional .py files including data loaders, model classes (e.g., 
 
 ## 📦 Dataset and Trained Models
 
-The datasets and trained models are archived on Zenodo at: [https://zenodo.org/records/18270213](https://zenodo.org/records/21867904).
+The datasets and trained models are archived on Zenodo at: [https://zenodo.org/records/21867904](https://zenodo.org/records/21867904).
 
 Usage Instructions: To facilitate model execution, please place the downloaded files in ./data  into the ./task/ directory within the DeepArct repository. This configuration ensures that the automated workflow correctly identifies the biological sequences and corresponding regulatory labels during the synthesis process.
 
